@@ -1,0 +1,61 @@
+name: PR 4880 native validation
+
+on:
+  push:
+    branches: [codex/pr4880-native-validation]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    if: github.repository == 'WCY-dt/wails'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: v3/go.sum
+      - name: Install GTK4 and WebKitGTK
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev libwayland-dev build-essential pkg-config xvfb x11-xserver-utils at-spi2-core
+      - name: Application and asset-server tests (Linux GTK4)
+        if: runner.os == 'Linux'
+        working-directory: v3
+        run: xvfb-run -a go test ./pkg/application ./internal/assetserver/...
+      - name: Panel race tests (Linux GTK4)
+        if: runner.os == 'Linux'
+        working-directory: v3
+        run: xvfb-run -a go test -race ./pkg/application -run TestPanel -count=1
+      - name: Native smoke test (Linux GTK4)
+        if: runner.os == 'Linux'
+        working-directory: v3
+        env:
+          GDK_BACKEND: x11
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+        run: xvfb-run -a go run ./test/manual/webview-panel
+      - name: Application and asset-server tests (macOS)
+        if: runner.os == 'macOS'
+        working-directory: v3
+        run: go test ./pkg/application ./internal/assetserver/...
+      - name: Panel race tests (macOS)
+        if: runner.os == 'macOS'
+        working-directory: v3
+        run: go test -race ./pkg/application -run TestPanel -count=1
+      - name: Native smoke test (macOS)
+        if: runner.os == 'macOS'
+        working-directory: v3
+        run: go run ./test/manual/webview-panel
+      - name: Production and server builds
+        working-directory: v3
+        run: |
+          go build -tags production ./pkg/application
+          go build -tags server ./pkg/application
